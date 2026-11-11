@@ -26,26 +26,8 @@ jobs:
           test -f README.md || { echo "README.md is missing"; exit 1; }
           test -s app.py || { echo "app.py is missing or empty"; exit 1; }
 
-      - name: Compile all Python files
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import py_compile
-          import sys
-
-          files = sorted(Path(".").rglob("*.py"))
-          if not files:
-              print("No Python files found")
-              sys.exit(1)
-
-          for file in files:
-              if any(part in {".git", ".venv", "venv", "__pycache__"} for part in file.parts):
-                  continue
-              print(f"Checking {file}")
-              py_compile.compile(str(file), doraise=True)
-
-          print("All Python files compiled successfully")
-          PY
+      - name: Compile Python files
+        run: python -m compileall -q .
 
   test:
     name: test
@@ -57,12 +39,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Run unit tests
-        run: |
-          if [ -d tests ]; then
-            python -m unittest discover -s tests -v
-          else
-            echo "tests directory is not present yet; unit tests will be added in task 2."
-          fi
+        run: python -m unittest discover -s tests -v
 
   package:
     name: package
@@ -71,14 +48,28 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Prepare package
+
+      - name: Prepare dist and manifest
+        shell: bash
         run: |
           mkdir -p dist
-          cp app.py README.md dist/
-          if [ -d tests ]; then cp -r tests dist/; fi
+          cp books.py README.md Dockerfile books.json.example dist/
+
+          {
+            echo "CI_COMMIT_SHA=$GITHUB_SHA"
+            echo "CI_PIPELINE_ID=$GITHUB_RUN_ID"
+            echo "FILES:"
+            printf '%s\n' books.py README.md Dockerfile books.json.example
+          } > dist/manifest.txt
+
+          echo "Manifest contents:"
+          cat dist/manifest.txt
+          echo "Files in dist:"
+          ls -la dist/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-project
+          name: books-project
           path: dist/
           retention-days: 7
