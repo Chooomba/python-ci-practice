@@ -1,0 +1,84 @@
+name: Python CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.11.10-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Python and commit
+        run: |
+          python --version
+          echo "Commit: $GITHUB_SHA"
+
+      - name: Check required files
+        run: |
+          test -f README.md || { echo "README.md is missing"; exit 1; }
+          test -s app.py || { echo "app.py is missing or empty"; exit 1; }
+
+      - name: Compile all Python files
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import py_compile
+          import sys
+
+          files = sorted(Path(".").rglob("*.py"))
+          if not files:
+              print("No Python files found")
+              sys.exit(1)
+
+          for file in files:
+              if any(part in {".git", ".venv", "venv", "__pycache__"} for part in file.parts):
+                  continue
+              print(f"Checking {file}")
+              py_compile.compile(str(file), doraise=True)
+
+          print("All Python files compiled successfully")
+          PY
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: validate
+    container:
+      image: python:3.11.10-slim
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run unit tests
+        run: |
+          if [ -d tests ]; then
+            python -m unittest discover -s tests -v
+          else
+            echo "tests directory is not present yet; unit tests will be added in task 2."
+          fi
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Prepare package
+        run: |
+          mkdir -p dist
+          cp app.py README.md dist/
+          if [ -d tests ]; then cp -r tests dist/; fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-project
+          path: dist/
+          retention-days: 7
